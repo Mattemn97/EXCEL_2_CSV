@@ -1,1 +1,5 @@
-Pillow
+pathlib
+typing
+pandas
+tqdm
+re

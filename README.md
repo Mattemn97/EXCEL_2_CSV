@@ -1,97 +1,269 @@
-# 🃏 Generatore di Flashcard Stampabili (Fronte/Retro)
-Script Python per creare flashcard stampabili fronte-retro a partire da un file CSV.
-Pensato per essere facile da usare, completamente personalizzabile e con una procedura guidata passo-passo da terminale.
+# Excel → SQL (multi‑dialect) Generator
 
-## ✨ Funzionalità principali
-- 🧭 Interfaccia guidata passo-passo da terminale
-- 📐 Scelta del formato pagina (A0–A6)
-- 🧮 Calcolo automatico del layout (righe, colonne, carte per pagina)
-- 📝 Supporto CSV con intestazioni flessibili
-- 🔄 Generazione automatica di fronte e retro specchiati
-- 📊 Barra di progresso con tqdm
-- 🖋️ Personalizzazione del font principale e dei tag
-- 🧩 Possibilità di unione automatica in un singolo PDF finale
+Uno script Python che **legge file Excel (.xlsx/.xls)** e genera automaticamente uno **script SQL** con:
+- `CREATE TABLE` per ogni foglio
+- `INSERT INTO` per tutte le righe, in **batch** per performance
 
-## 📂 Struttura del CSV
-Il file CSV deve avere come delimitatore il punto e virgola (;) e deve contenere almeno le colonne per i due lati della carta.
+Supporta più **dialetti SQL** (PostgreSQL, MySQL, SQLite, SQL Server) e include **inferenza dei tipi** (BOOLEAN/INT/DECIMAL/FLOAT/VARCHAR/TEXT), **sanitizzazione dei nomi** e **quoting** corretto per ciascun database.
 
-Esempio:
-```c
-Lato A;Lato B;Tag
-Ha salutato qualcuno che non lo stava salutando;6;Errori e figuracce
-Ha risposto “anche a te” dopo un “buon appetito” del cameriere;1;Errori e figuracce
-Ha riso a una battuta che non era una battuta;1;Errori e figuracce
-```
+> Progettato per flussi rapidi: basta indicare il file Excel, scegliere il dialetto, soglia `VARCHAR`, dimensione del batch e se la prima riga contiene intestazioni.
 
-Le intestazioni possono anche chiamarsi Side A, Side B, A, B, Etichetta, Label, ecc.
-Lo script riconosce automaticamente le varianti più comuni.
+---
 
+## Caratteristiche principali
 
-Installa le dipendenze con:
+- ✅ **Multi‑dialetto**: `postgres`, `mysql`, `sqlite`, `sqlserver`
+- ✅ **Inferenza robusta dei tipi**:
+  - `BOOLEAN` (true/false, t/f, y/n, yes/no, 0/1)
+  - `INT`
+  - `DECIMAL(p,s)` con stima **precisione** e **scala**
+  - `FLOAT` (notazione scientifica)
+  - `VARCHAR(n)` / `TEXT` (`NVARCHAR(n)` / `NVARCHAR(MAX)` su SQL Server)
+- ✅ **Quoting dei nomi** in base al dialetto:
+  - Postgres/SQLite: `"nome"`
+  - MySQL: `` `nome` ``
+  - SQL Server: `[nome]`
+- ✅ **Sanitizzazione nomi** di colonne e tabelle:
+  - Rimozione caratteri non validi, sostituzione con `_`
+  - Prefisso `_` se inizia con cifra
+  - Condensazione `_`
+  - Deduplica: `col`, `col_1`, `col_2`, …
+- ✅ **INSERT in batch** (default: 1000 righe per statement)
+- ✅ **Progress bar** con `tqdm`
+- ✅ **Gestione NULL, escape di apici nelle stringhe (‘ → ‘’)**
+- ✅ **Supporto fogli multipli**: un `CREATE TABLE` e INSERT per ciascun foglio
+
+---
+
+## Requisiti
+
+- **Python 3.9+** (consigliato 3.10/3.11)
+- Pacchetti:
+  - `pandas`
+  - `openpyxl` (per `.xlsx`)
+  - `xlrd` (per `.xls`)
+  - `tqdm`
+
+### Installazione
+
 ```bash
-pip install reportlab PyPDF2
+python -m venv .venv
+source .venv/bin/activate        # su Windows: .venv\Scripts\activate
+pip install -U pandas openpyxl xlrd tqdm
 ```
 
-## 📄 Formato del file CSV
-Il file flashcards.csv deve contenere tre colonne separate da (;) e deve contenere almeno le colonne per i due lati della carta.
+*(Facoltativo) crea un `requirements.txt`:*
 
-```csv
-Lato A;Lato B;Tag
-Che cos'è un algoritmo?;Una sequenza finita di istruzioni...;Informatica
-Capitale della Francia?;Parigi;Geografia
+```text
+pandas
+openpyxl
+xlrd
+tqdm
 ```
 
-## ⚙️ Installazione
-Assicurati di avere Python 3.7+ installato, poi installa le dipendenze:
+---
+
+## Utilizzo
+
+Lo script è **interattivo**: avvia e rispondi alle domande.
+
 ```bash
-pip install reportlab tqdm PyPDF2
+python excel_to_sql.py
 ```
 
-Clona o scarica questo repository, quindi esegui lo script:
+**Prompt di esempio:**
+
+```
+👉 Inserisci il percorso completo del file .xlsx/.xls: /percorso/dati.xlsx
+👉 Dialetto SQL (postgres/mysql/sqlite/sqlserver) [postgres]: mysql
+👉 Soglia VARCHAR(n) [255]: 200
+👉 Dimensione batch INSERT [1000]: 500
+👉 La prima riga contiene intestazioni? (s/n) [s]: s
+```
+
+**Output generato:**
+
+```
+/percorso/dati_mysql.sql
+```
+
+Nella stessa cartella dell’Excel, con il nome `<nomefile>_<dialect>.sql`.
+
+---
+
+## Esempio di output
+
+### CREATE TABLE (MySQL)
+
+```sql
+CREATE TABLE `vendite` (
+    `id` INT,
+    `prodotto` TEXT,
+    `quantita` INT,
+    `prezzo_unitario` DECIMAL(10,2),
+    `attivo` TINYINT(1)
+);
+```
+
+### INSERT in batch
+
+```sql
+INSERT INTO `vendite` (`id`, `prodotto`, `quantita`, `prezzo_unitario`, `attivo`) VALUES
+(1, 'Bulloni', 100, 0.25, 1),
+(2, 'Rondelle', 50, 0.10, 0),
+(3, 'Viti', 120, 0.30, 1);
+```
+
+---
+
+## Come funziona (inferenze e regole)
+
+### Dialetti e mappature di tipo
+
+- **BOOLEAN**:  
+  - `postgres`: `BOOLEAN` (valori `TRUE`/`FALSE`)  
+  - `mysql`: `TINYINT(1)` (valori `1`/`0`)  
+  - `sqlite`: `INTEGER` (valori `1`/`0`)  
+  - **sqlserver**: `BIT` (valori `1`/`0`)
+- **INT**:
+  - `postgres/sqlite`: `INTEGER`
+  - `mysql`: `INT`
+  - **sqlserver**: `INT`
+- **FLOAT**:
+  - `postgres`: `DOUBLE PRECISION`
+  - `mysql`: `DOUBLE`
+  - `sqlite`: `REAL`
+  - **sqlserver**: `FLOAT`
+- **DECIMAL/NUMERIC**:
+  - `postgres/sqlite`: `NUMERIC(p,s)`
+  - `mysql`: `DECIMAL(p,s)`
+  - **sqlserver**: `DECIMAL(p,s)`
+- **TEXT/STRING**:
+  - `postgres/sqlite`: `TEXT`
+  - `mysql`: `TEXT`
+  - `sqlserver`: `NVARCHAR(MAX)`  
+  Se lunghezza massima `≤ soglia VARCHAR(n)`, usa `VARCHAR(n)` (o `NVARCHAR(n)` su SQL Server).
+
+### Rilevamento BOOLEAN
+
+Valori riconosciuti (anche come stringhe, ignorando spazi e maiuscole/minuscole):  
+`true/false`, `t/f`, `y/n`, `yes/no`, `0/1`, `bool` Python.
+
+### Inferenza numerica
+
+- `INT`: tutti i valori sono interi (es. `1.0` ammesso se matematicamente intero)
+- `FLOAT`: presente **notazione scientifica** (es. `1e-3`)
+- `DECIMAL(p,s)`:
+  - calcolo `p` (precisione) e `s` (scala) dal massimo numero di cifre
+  - la **parte decimale** ignora **zeri finali** (`1.2300` ⇒ scala 2)
+  - **limiti**: `p ≤ 38`, `s ≤ 18`  
+- altrimenti, `VARCHAR(n)` o `TEXT` in base alla lunghezza massima
+
+### Sanitizzazione e quoting identificatori
+
+- rimozione caratteri non `[a-zA-Z0-9_]` ⇒ sostituiti con `_`
+- prefisso `_` se l’identificatore inizia con cifra
+- condensazione di `_` ripetuti
+- se vuoto ⇒ `col`
+- **deduplica** automatica: `nome`, `nome_1`, `nome_2`, …
+- **quoting**:
+  - `postgres/sqlite`: `"nome"`
+  - `mysql`: `` `nome` ``
+  - `sqlserver`: `[nome]`
+
+### Gestione dei dati
+
+- `NULL` per celle vuote / non convertibili
+- stringhe **escape** `'` ⇒ `''`
+- nessuna conversione di date/tempi (volutamente esclusa)
+
+---
+
+## Opzioni interattive
+
+- **Dialetto SQL**: `postgres/mysql/sqlite/sqlserver` (default: `postgres`)
+- **Soglia `VARCHAR(n)`**: default `255`  
+  Se la lunghezza massima trovata supera la soglia, usa `TEXT` (o `NVARCHAR(MAX)` per SQL Server).
+- **Batch size**: default `1000`  
+  Numero di righe per ciascun `INSERT` (migliora performance).
+- **Prima riga come intestazioni**: `s/n` (default: `s`)  
+  Se `n`, le colonne saranno `col_1`, `col_2`, …
+
+---
+
+## Limitazioni note
+
+- ❌ **Nessun parsing DATE/TIMESTAMP** (intenzionale)
+- ❌ **Nessuna definizione di PK/Unique/Index/FK** (schema minimale)
+- ⚠️ **Valori stringa numerici**: se non convertibili ⇒ `NULL`
+- ⚠️ **Zeri a sinistra** in colonne testuali numeriche possono perdersi se convertite a numeri
+- ⚠️ **Tipi testo**: su SQL Server si usa `NVARCHAR(MAX)` come testo “illimitato”
+- ⚠️ **Performance e memoria**: per file Excel molto grandi, l’uso di batch e `tqdm` aiuta, ma il caricamento dei fogli avviene in memoria
+
+---
+
+## Compatibilità Excel
+
+- `.xlsx` letto con **openpyxl**
+- `.xls` letto con **xlrd**
+- Fogli vuoti vengono **saltati**
+- Se **niente intestazioni**, le colonne diventano `col_1`, `col_2`, …
+
+---
+
+## Struttura consigliata della repo
+
+```
+.
+├── excel_to_sql.py
+├── README.md
+├── requirements.txt
+└── examples/
+    └── dati_di_esempio.xlsx
+```
+
+---
+
+## Troubleshooting
+
+- **Errore dialetto non valido**: assicurati di digitare esattamente uno tra `postgres/mysql/sqlite/sqlserver`
+- **Errore su librerie Excel**: installa `openpyxl` (xlsx) o `xlrd` (xls)
+- **Colonne duplicate**: lo script le deduplica automaticamente (`nome`, `nome_1`, …)
+- **Valori testuali con apostrofi**: vengono correttamente escapati (`O'Brien` ⇒ `'O''Brien'`)
+- **Numeri in notazione scientifica**: verranno trattati come `FLOAT`
+
+---
+
+## Contribuire
+
+- Fai una **fork**
+- Crea una branch: `feature/nome-feature`
+- Aggiungi test e documentazione
+- Apri una **pull request**
+
+Idee per estensioni:
+- Supporto `DATE/TIMESTAMP` con euristiche e/o formati configurabili
+- Generazione automatica di **PK** o colonne `IDENTITY/SERIAL`
+- Opzione **CLI non interattiva** (argomenti da riga di comando)
+- Supporto a **CSV** e altri formati di input
+
+---
+
+## Licenza
+
+Scegli una licenza (es. **MIT** o **Apache-2.0**). Aggiorna questa sezione con il testo ufficiale.
+
+---
+
+## Avvio rapido (TL;DR)
+
 ```bash
-python3 flashcard_generator.py
+# 1) Installazione
+pip install -U pandas openpyxl xlrd tqdm
+
+# 2) Esecuzione
+python excel_to_sql.py
+
+# 3) Output
+#   <cartella dell'Excel>/<nomefile>_<dialetto>.sql
 ```
-
-## 🧭 Utilizzo (modalità guidata)
-
-Avvia lo script e segui le istruzioni nel terminale.
-
-La procedura prevede i seguenti passaggi:
-1. Percorso CSV → seleziona il file con le carte.
-2. Formato pagina → scegli tra A0–A6.
-3. Dimensioni carte → inserisci larghezza e altezza (cm).
-4. Dimensione font → imposta la grandezza del testo principale.
-5. Anteprima impostazioni → visualizza il layout calcolato.
-6. Generazione → conferma per creare i PDF fronte e retro.
-
-Al termine troverai:
-- flashcards_fronte.pdf
-- flashcards_retro.pdf
-- flashcards.pdf (versione combinata fronte-retro)
-
-# 📊 Esempio di output
-``` yaml
-📋 Anteprima impostazioni:
-   • Formato pagina: A4 (21.0x29.7 cm)
-   • Dimensione carta: 6.0x4.0 cm
-   • Margini: 1.0x2.0 cm, gap 0.5 cm
-   • Layout: 3 colonne x 5 righe = 15 carte per pagina
-   • Font principale: 11 pt, tag: 10 pt
-   • Numero carte totali: 60 → 4 pagine circa
-```
-Durante la generazione verrà mostrata una barra di progresso in tempo reale.
-
-
-# 📦 Output finale
-Lo script produce:
-- ✅ flashcards_fronte.pdf – il lato A di ogni carta
-- ✅ flashcards_retro.pdf – il lato B, specchiato per stampa corretta
-- ✅ flashcards.pdf – versione combinata (fronte + retro intercalati)
-
-🧠 Suggerimenti
-
-- Stampa fronte-retro su lato corto per allineare perfettamente le carte.
-- Usa carta spessa (150–200 g/m²) per un risultato migliore.
-- Se vuoi carte più piccole o più grandi, modifica larghezza/altezza nella procedura guidata.
-- I tag appaiono in basso a destra, in corsivo, utili per categorizzare le carte.
-
